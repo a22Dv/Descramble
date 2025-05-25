@@ -1,17 +1,16 @@
+use crate::display::DisplayProgress;
 use std::cmp::{Ordering, PartialEq};
 use std::collections::{HashMap, HashSet};
-use std::ops::{Add, Sub};
 use std::fs::read;
 use std::hash::Hash;
-use std::io::Error;
+use std::io::{Cursor, Error};
+use std::ops::{Add, Sub};
 use std::path::Path;
-use crate::display::DisplayProgress;
 
 #[derive(Default)]
 pub struct Data {
-    pub freq_str_map: HashMap<usize, Vec<usize>>,
+    pub data_map: HashMap<Frequency, Vec<String>>,
     pub freqs: Vec<Frequency>,
-    pub strs: Vec<String>,
     pub rate: Vec<f64>,
 }
 const DOUBLE_SIZE: usize = 8;
@@ -35,15 +34,27 @@ impl TryFrom<&Path> for Data {
     type Error = DataError;
     fn try_from(value: &Path) -> Result<Self, Self::Error> {
         let raw_data = read(value)?;
-        let mut freq_str_map: HashMap<usize, Vec<usize>> = HashMap::<usize, Vec<usize>>::default();
+        let mut freq_str_map: HashMap<u32, Vec<u32>> = HashMap::<u32, Vec<u32>>::default();
         let mut freq_vec: Vec<Frequency> = Vec::<Frequency>::default();
         let mut str_vec: Vec<String> = Vec::<String>::default();
         let mut f64_vec: Vec<f64> = Vec::<f64>::default();
         let mut f64_buffer: [u8; DOUBLE_SIZE] = [0; DOUBLE_SIZE];
         let mut str_buffer: Vec<u8> = Vec::default();
         let mut counter: usize = 0;
+        let mut allowed_sequences: HashSet<String> = HashSet::default();
+        for char in "ai".chars() {
+            allowed_sequences.insert(char.to_string());
+        }
+        for word in vec![
+            "ai", "am", "an", "as", "at", "ax", "be", "by", "do", "ex", "go", "he", "hi", "id",
+            "if", "in", "is", "it", "me", "my", "no", "of", "oh", "ok", "on", "or", "ox", "pi",
+            "qi", "so", "to", "uh", "um", "up", "us", "we",
+        ] {
+            allowed_sequences.insert(word.to_string());
+        }
 
-        let data_progress: DisplayProgress = DisplayProgress::new("Reading Data", raw_data.len() as u64, "Byte no.");
+        let data_progress: DisplayProgress =
+            DisplayProgress::new("Reading Data", raw_data.len() as u64, "Byte no.");
         for byte in raw_data {
             if counter < DOUBLE_SIZE {
                 f64_buffer[counter] = byte;
@@ -51,10 +62,25 @@ impl TryFrom<&Path> for Data {
                 str_buffer.push(byte);
             } else {
                 let mut valid: bool = true;
-                for byte in &str_buffer {
-                    if *byte < b'a' || b'z' < *byte {
+                if str_buffer.len() < 3 {
+                    let string: &str = match &str::from_utf8(&str_buffer) {
+                        Ok(string) => string,
+                        Err(_) => {
+                            return Err(DataError::InvalidFormat(
+                                "UTF-8 parsing error in Data::TryFrom.".to_string(),
+                            ));
+                        }
+                    };
+                    if !allowed_sequences.contains(string) {
                         valid = false;
-                        break;
+                    }
+                }
+                if valid {
+                    for byte in &str_buffer {
+                        if *byte < b'a' || b'z' < *byte {
+                            valid = false;
+                            break;
+                        }
                     }
                 }
                 if valid {
@@ -76,29 +102,27 @@ impl TryFrom<&Path> for Data {
             counter += 1;
         }
         data_progress.finish();
-        let data_progress: DisplayProgress = DisplayProgress::new("Parsing Data", str_vec.len() as u64, "Pair no.");
+        let data_progress: DisplayProgress =
+            DisplayProgress::new("Parsing Data", str_vec.len() as u64, "Pair no.");
         let mut check_set: HashSet<Frequency> = HashSet::<Frequency>::default();
-        let mut freq_id_temp: HashMap<Frequency, usize> = HashMap::<Frequency, usize>::default();
-        let mut unique_freq_id: usize = 0;
+        let mut data_map: HashMap<Frequency, Vec<String>> =
+            HashMap::<Frequency, Vec<String>>::default();
         for (i, str) in str_vec.iter().enumerate() {
             let converted_freq: Frequency = Frequency::from(str.as_bytes());
             if check_set.insert(converted_freq.clone()) {
                 freq_vec.push(converted_freq.clone());
-                freq_str_map.insert(unique_freq_id, vec![i]);
-                freq_id_temp.insert(converted_freq, unique_freq_id);
-                unique_freq_id += 1;
+                data_map.insert(converted_freq.clone(), vec![str.to_string()]);
             } else {
-                if let Some(i_val) = freq_str_map.get_mut(&freq_id_temp[&converted_freq]) {
-                    i_val.push(i);
+                if let Some(vector) = data_map.get_mut(&converted_freq) {
+                    vector.push(str.to_string());
                 }
             }
             data_progress.increment(1);
         }
         data_progress.finish();
         Ok(Data {
-            freq_str_map: freq_str_map,
+            data_map: data_map,
             freqs: freq_vec,
-            strs: str_vec,
             rate: f64_vec,
         })
     }
@@ -107,6 +131,16 @@ const ALPHA_COUNT: usize = 26;
 #[derive(Hash, Clone, Default, Debug)]
 pub struct Frequency {
     pub arr: [i8; ALPHA_COUNT],
+}
+impl Frequency {
+    pub fn is_invalid(&self) -> bool {
+        for v in self.arr {
+            if v < 0 {
+                return true;
+            }
+        }
+        false
+    }
 }
 impl From<&[u8]> for Frequency {
     fn from(value: &[u8]) -> Self {
@@ -169,22 +203,60 @@ impl PartialEq for Frequency {
     }
 }
 impl Eq for Frequency {}
-impl PartialOrd for Frequency {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        let mut gt: bool = false;
-        let mut lt: bool = false;
-        for (i, j) in self.arr.iter().zip(other.arr.iter()) {
-            if i < j {
-                lt = true;
-            } else if i > j {
-                gt = true;
-            }
-        }
-        match (gt, lt) {
-            (false, false) => Some(Ordering::Equal),
-            (true, false) => Some(Ordering::Greater),
-            (false, true) => Some(Ordering::Less),
-            (true, true) => None,
-        }
+#[cfg(test)]
+mod test {
+    use super::*;
+    #[test]
+    fn test_init() {
+        assert_eq!(Frequency::from(0).arr, [0 as i8; ALPHA_COUNT]);
+        assert_eq!(
+            Frequency::from("he7;o".as_bytes()).arr,
+            [
+                0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            ]
+        );
+        assert_eq!(
+            Frequency::from("HELLO".as_bytes()).arr,
+            [
+                0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 2, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            ]
+        );
+        assert_eq!(
+            Frequency::from("hello".as_bytes()).arr,
+            [
+                0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 2, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            ]
+        );
+        assert_eq!(
+            Frequency::from("HeLLo".as_bytes()).arr,
+            [
+                0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 2, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            ]
+        );
+    }
+    #[test]
+    fn test_impl() {
+        assert_eq!(
+            Frequency::from(-1).is_invalid(), true
+        );
+        assert_eq!(
+            (Frequency::from("From".as_bytes()) - Frequency::from("mm".as_bytes())).is_invalid(), true
+        );
+        
+    }
+    #[test]
+    fn test_ops() {
+        assert_eq!(
+            Frequency::from("Hello".as_bytes()) + Frequency::from("Hello".as_bytes()),
+            Frequency::from("HelloHello".as_bytes())
+        );
+        assert_eq!(
+            Frequency::from("Hello".as_bytes()) - Frequency::from("Hello".as_bytes()),
+            Frequency::from("".as_bytes())
+        );
+        assert_eq!(
+            Frequency::from("Hello".as_bytes()) - Frequency::from("llo".as_bytes()),
+            Frequency::from("He".as_bytes())
+        )
     }
 }
