@@ -1,15 +1,16 @@
 use crate::display::DisplayProgress;
-use std::cmp::{Ordering, PartialEq};
+use std::cmp::PartialEq;
 use std::collections::{HashMap, HashSet};
 use std::fs::read;
 use std::hash::Hash;
-use std::io::{Cursor, Error};
+use std::io::Error;
 use std::ops::{Add, Sub};
 use std::path::Path;
 
 #[derive(Default)]
 pub struct Data {
     pub data_map: HashMap<Frequency, Vec<String>>,
+    pub str_rate_map: HashMap<String, f64>,
     pub freqs: Vec<Frequency>,
     pub rate: Vec<f64>,
 }
@@ -34,7 +35,6 @@ impl TryFrom<&Path> for Data {
     type Error = DataError;
     fn try_from(value: &Path) -> Result<Self, Self::Error> {
         let raw_data = read(value)?;
-        let mut freq_str_map: HashMap<u32, Vec<u32>> = HashMap::<u32, Vec<u32>>::default();
         let mut freq_vec: Vec<Frequency> = Vec::<Frequency>::default();
         let mut str_vec: Vec<String> = Vec::<String>::default();
         let mut f64_vec: Vec<f64> = Vec::<f64>::default();
@@ -104,6 +104,7 @@ impl TryFrom<&Path> for Data {
         data_progress.finish();
         let data_progress: DisplayProgress =
             DisplayProgress::new("Parsing Data", str_vec.len() as u64, "Pair no.");
+        let mut str_rate_map: HashMap<String, f64> = HashMap::default();
         let mut check_set: HashSet<Frequency> = HashSet::<Frequency>::default();
         let mut data_map: HashMap<Frequency, Vec<String>> =
             HashMap::<Frequency, Vec<String>>::default();
@@ -117,11 +118,13 @@ impl TryFrom<&Path> for Data {
                     vector.push(str.to_string());
                 }
             }
+            str_rate_map.insert(str.clone(), f64_vec[i]);
             data_progress.increment(1);
         }
         data_progress.finish();
         Ok(Data {
             data_map: data_map,
+            str_rate_map: str_rate_map,
             freqs: freq_vec,
             rate: f64_vec,
         })
@@ -140,6 +143,13 @@ impl Frequency {
             }
         }
         false
+    }
+    pub fn sum(vec_freq: &Vec<Self>) -> Frequency {
+        let mut sum: Frequency = Frequency::from(0);
+        for freq in vec_freq {
+            sum = &sum + freq;
+        }
+        sum
     }
 }
 impl From<&[u8]> for Frequency {
@@ -236,13 +246,11 @@ mod test {
     }
     #[test]
     fn test_impl() {
+        assert_eq!(Frequency::from(-1).is_invalid(), true);
         assert_eq!(
-            Frequency::from(-1).is_invalid(), true
+            (Frequency::from("From".as_bytes()) - Frequency::from("mm".as_bytes())).is_invalid(),
+            true
         );
-        assert_eq!(
-            (Frequency::from("From".as_bytes()) - Frequency::from("mm".as_bytes())).is_invalid(), true
-        );
-        
     }
     #[test]
     fn test_ops() {
