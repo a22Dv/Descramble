@@ -5,9 +5,5 @@ edition = "2024"
 author = "a22Dv"
 
 [dependencies]
-clap = { version = "4.5.38", features = ["derive"] }
-clearscreen = "4.0.1"
-indicatif = "0.17.11"
-owo-colors = "4.2.1"
-regex = "1.11.1"
-which = "7.0.3"
+clap = { version = "4.5.39", features = ["derive"] }
+indexmap = "2.9.0"
