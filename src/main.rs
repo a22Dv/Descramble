@@ -5,23 +5,28 @@ mod application;
 mod data;
 use clap::Parser;
 use data::{Args, Data, State};
-use std::path::PathBuf;
+use std::path::{PathBuf};
 
 fn main() {
     let root_path: PathBuf = match current_exe() {
-        Ok(path) => path,
+        Ok(path) => path.parent().unwrap().to_path_buf(),
         Err(err) => {
             panic!(
-                "Fatal error. Cannot retrieve path of 'descramble.exe'. {}",
+                "Fatal error. Cannot retrieve path of 'descramble.exe'.\n{}",
                 err
             );
         }
     };
     let app: Application = Application::new(State::new(
         Args::parse(),
-        Data::try_from(root_path.as_path())
-            .expect("Fatal error. Data cannot be retrieved with Data::try_from"),
-        root_path,
+        match Data::try_from(&root_path.join("data")) {
+            Ok(data) => data,
+            Err(err) => panic!(
+                "Fatal error. Cannot retrieve data using Data::TryFrom.\n{:?}",
+                err
+            ),
+        },
+        root_path.to_path_buf(),
     ));
     app.start()
 }
