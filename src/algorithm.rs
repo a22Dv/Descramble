@@ -13,6 +13,8 @@ impl Solutions {
             let mut mean_scores: Vec<f64> = vec![];
             let mut odometer: Vec<usize> = vec![0; solution.len()];
             let odo_len: usize = odometer.len();
+
+            // Create phrases.
             'main: loop {
                 let mut words: Vec<String> = vec![];
                 let mut mean: f64 = 0.0;
@@ -21,7 +23,7 @@ impl Solutions {
                     let score: f64 = rate_map[&solution[i][*idx]];
                     mean += score;
                 }
-                mean_scores.push(mean);
+                mean_scores.push(mean / words.len() as f64);
                 phrases.push(words.join(" "));
                 for i in 0..odo_len {
                     if odometer[i] + 1 < solution[i].len() {
@@ -31,28 +33,25 @@ impl Solutions {
                         if i == 0 {
                             break 'main;
                         }
-                        odometer[i] = 0;
+                        for j in i..odo_len {
+                            odometer[j] = odometer[i];
+                        }
                     }
                 }
             }
             for (phrase, score) in phrases.iter().zip(mean_scores) {
                 parsed_solution.push((phrase.clone(), score));
             }
-            let mut sol_sum: f64 = 0.0;
-            for solution in &parsed_solution {
-                sol_sum += solution.1;
-            }
-            for solution in parsed_solution.iter_mut() {
-                solution.1 = (solution.1 / sol_sum) * 100.0;
-            }
+        }
+        let mut sol_sum: f64 = 0.0;
+        for solution in &parsed_solution {
+            sol_sum += solution.1;
+        }
+        for solution in parsed_solution.iter_mut() {
+            solution.1 = (solution.1 / sol_sum) * 100.0;
         }
         parsed_solution.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
-        let sol_count: usize = parsed_solution.len();
-        if sol_count > 100 {
-            return parsed_solution[(sol_count - 101)..(sol_count - 1)].to_vec();
-        } else {
-            return parsed_solution;
-        }
+        return parsed_solution;
     }
 }
 impl From<&State> for Solutions {
@@ -135,7 +134,9 @@ impl From<&State> for Solutions {
                         map
                     };
                     if state.args.word_count == 1 {
-                        solutions.insert(vec![freq_idx[&anagram_frequency]]);
+                        if freq_idx.contains_key(&anagram_frequency) {
+                            solutions.insert(vec![freq_idx[&anagram_frequency]]);
+                        }
                     } else {
                         let mut odometer: Vec<usize> =
                             vec![0; (state.args.word_count - 1) as usize];
