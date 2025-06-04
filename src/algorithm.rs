@@ -51,7 +51,13 @@ impl Solutions {
             solution.1 = (solution.1 / sol_sum) * 100.0;
         }
         parsed_solution.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
-        return parsed_solution;
+        let sol_len: usize = parsed_solution.len();
+        if sol_len > state.args.top_results as usize {
+            return parsed_solution[(sol_len - state.args.top_results as usize)..(sol_len - 1)].to_vec();
+        } else {
+            return parsed_solution;
+        }
+            
     }
 }
 impl From<&State> for Solutions {

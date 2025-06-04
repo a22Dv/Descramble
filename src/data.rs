@@ -13,9 +13,9 @@ pub struct Args {
     pub anagram: String,
     #[arg(short, long, default_value_t = 0)]
     pub word_count: u8,
-    #[arg(short, long, default_value_t = false)]
-    pub formatted: bool,
-    #[arg(short, long, default_value_t = 5)]
+    #[arg(short, long, default_value_t = 50)]
+    pub top_results: u32,
+    #[arg(short, long, default_value_t = 0)]
     pub strength: u8,
 }
 pub struct State {
