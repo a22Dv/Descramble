@@ -1,0 +1,43 @@
+for word in [
+                "a", "i", "am", "an", "as", "at", "be", "by", "do", "he", "hi", "if", "in", "is",
+                "it", "me", "my", "no", "of", "oh", "on", "or", "ox", "so", "to", "up", "us"
+            ] {
+                set.insert(word.to_string());
+            }
+            set
+
+
+let mut phrases: Vec<(String, f64)> = vec![];
+let mut odometer: Vec<usize> = vec![0; sequence.len()];
+let odo_len: usize = odometer.len();
+'main: loop {
+    println!("{} {} {}", odometer[0], odometer[1], odometer[2]);
+    for i in 0..odo_len {
+        if odometer[i] < sequence[i].len() - 1 {
+            odometer[i] += 1;
+            break;
+        } else if i == odo_len - 1 {
+            break 'main;
+        } else {
+            for j in 0..=i {
+                odometer[j] = odometer[i + 1] + 1 
+            }   
+        }
+    }
+}
+ let idx_to_pos: HashMap<i8, String> = HashMap::from([
+            (0, "ADJ".to_string()),
+            (1, "ADP".to_string()),
+            (2, "ADV".to_string()),
+            (3, "AUX".to_string()),
+            (4, "CCONJ".to_string()),
+            (5, "DET".to_string()),
+            (6, "INTJ".to_string()),
+            (7, "NOUN".to_string()),
+            (8, "NUM".to_string()),
+            (9, "PART".to_string()),
+            (10, "PRON".to_string()),
+            (11, "PROPN".to_string()),
+            (12, "SCONJ".to_string()),
+            (13, "VERB".to_string()),
+        ]);

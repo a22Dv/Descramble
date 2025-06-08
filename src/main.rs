@@ -7,7 +7,10 @@ use clap::Parser;
 use data::{Args, Data, State};
 use std::path::{PathBuf};
 
+/// DONE. No further changes.
+/// Entry point.
 fn main() {
+    // Binary file path.
     let root_path: PathBuf = match current_exe() {
         Ok(path) => path.parent().unwrap().to_path_buf(),
         Err(err) => {
@@ -30,3 +33,4 @@ fn main() {
     ));
     app.start()
 }
+

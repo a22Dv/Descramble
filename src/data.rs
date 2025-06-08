@@ -1,4 +1,6 @@
 use clap::Parser;
+use serde::Deserialize;
+use serde_json::{self, Deserializer};
 use std::cmp::PartialEq;
 use std::collections::{HashMap, HashSet};
 use std::fs::read;
@@ -18,6 +20,7 @@ pub struct Args {
     #[arg(short, long, default_value_t = 0)]
     pub strength: u8,
 }
+
 pub struct State {
     pub args: Args,
     pub data: Data,
@@ -32,6 +35,7 @@ impl State {
         }
     }
 }
+
 #[derive(Default, Eq, Hash, Debug, Clone, Copy)]
 pub struct Frequency {
     pub arr: [i8; ALPHA_COUNT],
@@ -93,75 +97,52 @@ impl PartialEq for Frequency {
     }
 }
 const F64_SIZE: usize = size_of::<f64>();
-pub struct Data {
-    pub str_map: HashMap<Frequency, Vec<String>>,
-    pub rate_map: HashMap<String, f64>,
+
+#[derive(Debug, Deserialize)]
+pub struct Entry {
+    pub frequency: f64,
+    pub tag: String,
 }
 #[derive(Debug)]
 pub enum DataError {
     ParseError(std::string::FromUtf8Error),
     IOError(std::io::Error),
 }
+pub struct Data {
+    pub string_mapping: HashMap<Frequency, Vec<String>>,
+    pub string_data: HashMap<String, Entry>,
+}
 /// Get dictionary data from a specified path.
 impl TryFrom<&PathBuf> for Data {
     type Error = DataError;
     fn try_from(path: &PathBuf) -> Result<Self, Self::Error> {
-        let data: Vec<u8> = match read(path.join("base.bin")) {
-            Ok(data) => data,
-            Err(err) => return Err(DataError::IOError(err)),
-        };
-        let valid_short_seq: HashSet<String> = {
-            let mut set: HashSet<String> = HashSet::default();
-            for word in [
-                "a", "i", "am", "an", "as", "at", "be", "by", "do", "he", "hi", "if", "in", "is",
-                "it", "me", "my", "no", "of", "oh", "on", "or", "ox", "so", "to", "up", "us"
-            ] {
-                set.insert(word.to_string());
-            }
-            set
-        };
-        let mut freq_map: HashMap<Frequency, Vec<String>> = HashMap::default();
-        let mut rate_map: HashMap<String, f64> = HashMap::default();
-        let mut seq_idx: usize = 0;
-        let mut entry: (String, f64) = (String::default(), 0.0_f64);
-        let mut buffer: Vec<u8> = vec![];
-        for byte in data.iter() {
-            buffer.push(*byte);
-            if seq_idx == F64_SIZE - 1 {
-                entry.1 = f64::from_le_bytes({
-                    let mut arr: [u8; F64_SIZE] = [0; F64_SIZE];
-                    for i in 0..F64_SIZE {
-                        arr[i] = buffer[i];
-                    }
-                    arr
-                });
-                buffer.clear();
-            } else if F64_SIZE <= seq_idx && *byte == 0xA {
-                buffer.pop();
-                entry.0 = match String::from_utf8(buffer.clone()) {
-                    Ok(string) => string,
-                    Err(err) => return Err(DataError::ParseError(err)),
-                };
-                if (entry.0.len() < 3 && valid_short_seq.contains(&entry.0)) || entry.0.len() >= 3 {
-                    let ltr_freq: Frequency = Frequency::from(entry.0.as_bytes());
-                    if freq_map.contains_key(&ltr_freq) {
-                        freq_map.get_mut(&ltr_freq).unwrap().push(entry.0.clone())
-                    } else {
-                        freq_map.insert(ltr_freq, vec![entry.0.clone()]);
-                    }
-                    rate_map.insert(entry.0, entry.1);
+        let data: HashMap<String, Entry> =
+            serde_json::from_slice(&read(path.join("data.json")).unwrap()).unwrap();
+        let mut mappings: HashMap<Frequency, Vec<String>> = HashMap::default();
+        let valid_short_strings: HashSet<&str> = HashSet::from([
+            "a", "i", "am", "an", "as", "at", "be", "by", "do", "he", "hi", "if", "in", "is", "it",
+            "me", "my", "no", "of", "oh", "on", "or", "ox", "so", "to", "up", "us",
+        ]);
+        'main: for string in data.keys() {
+            for char in string.as_bytes() {
+                if !(b'a' <= *char && *char <= b'z') {
+                    continue 'main;
                 }
-                buffer.clear();
-                seq_idx = 0;
-                continue;
             }
-            seq_idx += 1;
+            if string.len() < 3 && !valid_short_strings.contains(string.as_str()) {
+                continue 'main;
+            }
+            let frequency = Frequency::from(string.as_bytes());
+            if mappings.contains_key(&frequency) {
+                mappings.get_mut(&frequency).unwrap().push(string.clone());
+            } else {
+                mappings.insert(frequency, vec![string.clone()]);
+            }
         }
-        let data_obj: Data = Data {
-            str_map: freq_map,
-            rate_map: rate_map,
-        };
-        Ok(data_obj)
+        Ok(Data {
+            string_mapping: mappings,
+            string_data: data,
+        })
     }
 }
 
