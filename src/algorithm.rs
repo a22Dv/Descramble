@@ -1,6 +1,8 @@
 use crate::data::{Frequency, State};
 use std::collections::{HashMap, HashSet};
 use std::fs::read;
+use std::usize;
+use itertools::Itertools;
 
 #[derive(Debug)]
 pub struct Solutions {
@@ -9,7 +11,7 @@ pub struct Solutions {
     solutions: Vec<Vec<Vec<String>>>,
 }
 const POS_TAG_COUNT: usize = 14;
-const TEMPLATE_FIT_REWARD: f64 = 10.0;
+const TEMPLATE_FIT_REWARD: f64 = 1.0;
 const TEMPLATE_UNFIT_PENALTY: f64 = 0.1;
 impl Solutions {
     pub fn parse(&self, state: &State) -> Vec<(String, f64)> {
@@ -48,11 +50,15 @@ impl Solutions {
         };
 
         let mut parsed_solution: Vec<(String, f64)> = vec![];
+        // [[[statue, astute], [of], [liberty]], ...]
         let solutions: &Vec<Vec<Vec<String>>> = &self.solutions;
         for solution in solutions {
             // Holds possible final solutions, combinations of the final words. Needs reordering.
+            // [[astute, of, liberty], [statue, of, liberty]]
             let mut phrases: Vec<(Vec<String>, f64)> = Solutions::get_phrases(&solution, state);
             for (phrase, score) in phrases.iter_mut() {
+                // phrase: [statue, of, liberty]
+                // Get the tags for the phrase.
                 let tags: Vec<String> = {
                     let mut tags: Vec<String> = vec![];
                     for word in phrase.iter() {
@@ -60,6 +66,7 @@ impl Solutions {
                     }
                     tags
                 };
+                // Get the key.
                 let key: [u8; POS_TAG_COUNT] = {
                     let mut key: [u8; POS_TAG_COUNT] = [0; POS_TAG_COUNT];
                     for tag in tags.iter() {
@@ -67,30 +74,37 @@ impl Solutions {
                     }
                     key
                 };
+                // Can fit a template.
                 if templates.contains_key(&key) {
-                    // Modify phrase in place.
                     let template: &Vec<String> = &templates[&key];
-                    let pos_idx: HashMap<String, usize> = {
-                        let mut pos_idx: HashMap<String, usize> = HashMap::default();
-                        for (i,tag) in tags.iter().enumerate() {
-                            pos_idx.insert(tag.to_string(), i);
+                    // Map tags to the positions they were found in.
+                    let pos_idx: HashMap<String, Vec<usize>> = {
+                        let mut pos_idx: HashMap<String, Vec<usize>> = HashMap::default();
+                        for (i, tag) in tags.iter().enumerate() {
+                            if pos_idx.contains_key(tag) {
+                                pos_idx.get_mut(tag).unwrap().push(i);
+                            } else {
+                                pos_idx.insert(tag.to_string(), vec![i]);
+                            }
                         }
                         pos_idx
                     };
-                    let mut new_phrase: Vec<String> = vec![];
-                    for pos in template {
-                        new_phrase.push(phrase[pos_idx[pos]].clone());
-                    }
-                    *phrase = new_phrase;
-
-                    // Boosted due to fitting to a template.
                     *score *= TEMPLATE_FIT_REWARD;
+                    let phrases_indices: Vec<Vec<usize>> = Solutions::reorder(&template, &pos_idx);
+                    let mut final_solutions: Vec<(String, f64)> = vec![];
+                    for indices in phrases_indices {
+                        let mut phrase_solution: Vec<String> = vec![];
+                        for idx in indices.iter() {
+                            phrase_solution.push(phrase[*idx].clone());
+                        }
+                        final_solutions.push((phrase_solution.join(" "), *score));
+                    }
+                    parsed_solution.extend(final_solutions);
                 } else {
                     *score *= TEMPLATE_UNFIT_PENALTY;
+                    parsed_solution.push((phrase.join(" "), *score));
                 }
-                parsed_solution.push((phrase.join(" "), *score))
             }
-            
         }
         // Final normalization.
         let mut total_sum: f64 = 0.0;
@@ -101,7 +115,73 @@ impl Solutions {
             solution.1 = (solution.1 / total_sum) * 100.0;
         }
         parsed_solution.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
-        parsed_solution
+        if parsed_solution.len() < state.args.top_results as usize {
+            return parsed_solution;
+        }
+        parsed_solution[0..state.args.top_results as usize].to_vec()
+    }
+    pub fn reorder(
+        template: &Vec<String>,
+        pos_idx: &HashMap<String, Vec<usize>>,
+    ) -> Vec<Vec<usize>> {
+        // Map the positions inside each POS tag in POS_IDX to the template.
+        // Maps POS tags to their individual order permutations.
+        // "NOUN: [(0, 1), (1, 0)], ADJ: [(2)]"
+        let mut subpermutations: HashMap<String, Vec<Vec<usize>>> = HashMap::default();
+        for pos_id in pos_idx.keys() {
+            let data: &Vec<usize> = &pos_idx[pos_id];
+            let permutations: Vec<Vec<usize>> = data.iter().cloned().permutations(data.len()).collect();
+            subpermutations.insert(pos_id.clone(), permutations);
+        }
+        // Consistent key order.
+        let cartesian_element_order: Vec<String> = {
+            let mut cartesian_element_order: Vec<String> = vec![];
+            for key in subpermutations.keys() {
+                cartesian_element_order.push(key.clone());
+            }
+            cartesian_element_order
+        };
+        
+        // Get the cartesian product of these elements. -> (0 1 2, 1 0 2)
+        // Means first noun permut, second adj permut, third verb permut, etc...
+        // Map these permutations to the template itself in order.
+        let mut orders: Vec<Vec<usize>> = vec![];
+        let mut odometer: Vec<usize> = vec![0; subpermutations.len()];
+        let odo_len: usize = odometer.len();
+        'main: loop {
+            orders.push(odometer.clone());
+            for i in 0..odo_len {
+                if odometer[i] < subpermutations[&cartesian_element_order[i]].len() - 1 {
+                    odometer[i] += 1;
+                    break;
+                } else if i == odo_len - 1 {
+                    break 'main;
+                } else {
+                    for j in 0..=i {
+                        odometer[j] = 0;
+                    }
+                }
+            }
+        }
+        let mut weaved_elements: Vec<Vec<usize>> = vec![];
+        // We go through each conceived order
+        for order in orders {
+            // Each order follows the element order, so we loop through that.
+            let mut weaved_element: Vec<usize> = vec![0; template.len()];
+            for (i, tag) in cartesian_element_order.iter().enumerate() {
+                // For each tag, we get the corresponding permutation described by the order.
+                let tag_permutation: &Vec<usize> = &subpermutations[tag][order[i]];
+                let mut matched: usize = 0;
+                for (j, pos) in template.iter().enumerate() {
+                    if pos == tag {
+                        weaved_element[j] = tag_permutation[matched];
+                        matched += 1
+                    }
+                }
+            }
+            weaved_elements.push(weaved_element);
+        }
+        weaved_elements
     }
     pub fn get_phrases(words: &Vec<Vec<String>>, state: &State) -> Vec<(Vec<String>, f64)> {
         let mut phrases: Vec<(Vec<String>, f64)> = vec![];
