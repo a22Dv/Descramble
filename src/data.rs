@@ -96,8 +96,6 @@ impl PartialEq for Frequency {
         self.arr == other.arr
     }
 }
-const F64_SIZE: usize = size_of::<f64>();
-
 #[derive(Debug, Deserialize)]
 pub struct Entry {
     pub frequency: f64,

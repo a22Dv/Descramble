@@ -1,8 +1,11 @@
 use crate::data::{Frequency, State};
+use indicatif::{ProgressBar, ProgressStyle};
+use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
 use std::fs::read;
+use std::time::Duration;
 use std::usize;
-use itertools::Itertools;
+use rayon::prelude::*;
 
 #[derive(Debug)]
 pub struct Solutions {
@@ -14,7 +17,7 @@ const POS_TAG_COUNT: usize = 14;
 const TEMPLATE_FIT_REWARD: f64 = 1.0;
 const TEMPLATE_UNFIT_PENALTY: f64 = 0.1;
 impl Solutions {
-    pub fn parse(&self, state: &State) -> Vec<(String, f64)> {
+    pub fn parse(&self, state: &State) -> Vec<((u32, u32), String, f64)> {
         // Clunky but whatever.
         let repr_index: HashMap<String, usize> = HashMap::from([
             ("ADJ".to_string(), 0),
@@ -49,20 +52,35 @@ impl Solutions {
             templates
         };
 
-        let mut parsed_solution: Vec<(String, f64)> = vec![];
+        let mut parsed_solution: Vec<((u32, u32), String, f64)> = vec![];
         // [[[statue, astute], [of], [liberty]], ...]
         let solutions: &Vec<Vec<Vec<String>>> = &self.solutions;
-        for solution in solutions {
+        let pb: ProgressBar = ProgressBar::new(solutions.len() as u64);
+        pb.set_style(
+            ProgressStyle::with_template(
+                "[{bar:.white}] [{pos} of {len}] [{elapsed_precise}] {msg}",
+            )
+            .unwrap()
+            .progress_chars("▪▪ "),
+        );
+        pb.set_message("Processing solutions...");
+        for (i, solution) in solutions.iter().enumerate() {
             // Holds possible final solutions, combinations of the final words. Needs reordering.
             // [[astute, of, liberty], [statue, of, liberty]]
             let mut phrases: Vec<(Vec<String>, f64)> = Solutions::get_phrases(&solution, state);
-            for (phrase, score) in phrases.iter_mut() {
+            for (j, (phrase, score)) in phrases.iter_mut().enumerate() {
                 // phrase: [statue, of, liberty]
                 // Get the tags for the phrase.
                 let tags: Vec<String> = {
                     let mut tags: Vec<String> = vec![];
                     for word in phrase.iter() {
-                        tags.push(state.data.string_data[word].tag.clone());
+                        let tag: &String = &state.data.string_data[word].tag;
+                        // Proper nouns can be treated as nouns.
+                        if tag != "PROPN" {
+                            tags.push(tag.clone());
+                        } else {
+                            tags.push("NOUN".to_string());
+                        }
                     }
                     tags
                 };
@@ -91,30 +109,35 @@ impl Solutions {
                     };
                     *score *= TEMPLATE_FIT_REWARD;
                     let phrases_indices: Vec<Vec<usize>> = Solutions::reorder(&template, &pos_idx);
-                    let mut final_solutions: Vec<(String, f64)> = vec![];
+                    let mut final_solutions: Vec<((u32, u32), String, f64)> = vec![];
                     for indices in phrases_indices {
                         let mut phrase_solution: Vec<String> = vec![];
                         for idx in indices.iter() {
                             phrase_solution.push(phrase[*idx].clone());
                         }
-                        final_solutions.push((phrase_solution.join(" "), *score));
+                        final_solutions.push((
+                            (i as u32, j as u32),
+                            phrase_solution.join(" "),
+                            *score,
+                        ));
                     }
                     parsed_solution.extend(final_solutions);
                 } else {
                     *score *= TEMPLATE_UNFIT_PENALTY;
-                    parsed_solution.push((phrase.join(" "), *score));
+                    parsed_solution.push(((i as u32, j as u32), phrase.join(" "), *score));
                 }
             }
+            pb.inc(1);
         }
         // Final normalization.
         let mut total_sum: f64 = 0.0;
         for solution in parsed_solution.iter() {
-            total_sum += solution.1;
+            total_sum += solution.2;
         }
         for solution in parsed_solution.iter_mut() {
-            solution.1 = (solution.1 / total_sum) * 100.0;
+            solution.2 = (solution.2 / total_sum) * 100.0;
         }
-        parsed_solution.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        parsed_solution.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap());
         if parsed_solution.len() < state.args.top_results as usize {
             return parsed_solution;
         }
@@ -130,7 +153,8 @@ impl Solutions {
         let mut subpermutations: HashMap<String, Vec<Vec<usize>>> = HashMap::default();
         for pos_id in pos_idx.keys() {
             let data: &Vec<usize> = &pos_idx[pos_id];
-            let permutations: Vec<Vec<usize>> = data.iter().cloned().permutations(data.len()).collect();
+            let permutations: Vec<Vec<usize>> =
+                data.iter().cloned().permutations(data.len()).collect();
             subpermutations.insert(pos_id.clone(), permutations);
         }
         // Consistent key order.
@@ -141,7 +165,7 @@ impl Solutions {
             }
             cartesian_element_order
         };
-        
+
         // Get the cartesian product of these elements. -> (0 1 2, 1 0 2)
         // Means first noun permut, second adj permut, third verb permut, etc...
         // Map these permutations to the template itself in order.
@@ -214,13 +238,55 @@ impl Solutions {
         }
         phrases
     }
+    pub fn display_solution(solutions: Vec<((u32, u32), String, f64)>) {
+        let mut original_order: Vec<(u32, u32)> = vec![];
+        let mut format_variations: HashMap<(u32, u32), (Vec<String>, f64)> = HashMap::default();
+        for solution in solutions {
+            if format_variations.contains_key(&solution.0) {
+                format_variations
+                    .get_mut(&solution.0)
+                    .unwrap()
+                    .0
+                    .push(solution.1);
+            } else {
+                format_variations.insert(solution.0, (vec![solution.1], solution.2));
+                original_order.push(solution.0);
+            }
+        }
+        let mut max_sequence_length: usize = 0;
+        let mut display_string: Vec<u8> = vec![];
+        for key in &original_order {
+            let string_value: String = (format_variations[&key].0).join(" / ");
+            let str_len: usize = string_value.len();
+            if max_sequence_length < str_len {
+                max_sequence_length = str_len;
+            }
+        }
+        for key in &original_order {
+            let string_value: String = (format_variations[&key].0).join(" / ");
+            let str_len: usize = string_value.len();
+            let float_value: f64 = format_variations[&key].1;
+            if max_sequence_length < str_len {
+                max_sequence_length = str_len;
+            }
+            display_string.extend(
+                format!(
+                    "{}{} - {:.2}%\n",
+                    string_value,
+                    String::from_utf8(vec![b' '; max_sequence_length - str_len]).unwrap(),
+                    float_value
+                )
+                .as_bytes(),
+            )
+        }
+        print!("{}", String::from_utf8(display_string).unwrap());
+    }
 }
 impl From<&State> for Solutions {
     fn from(state: &State) -> Self {
         let threshold: f64 =
             { 1e-9_f64 + (1e-4_f64 - 1e-9_f64) * (f64::from(state.args.strength) / 10_f64) };
         let anagram_frequency: Frequency = Frequency::from(state.args.anagram.as_bytes());
-
         // `frequencies` is already pre-filtered from the initial list based on frequency.
         let frequencies: Vec<Frequency> = {
             let mut frequencies: Vec<Frequency> = vec![];
@@ -248,6 +314,30 @@ impl From<&State> for Solutions {
         if branches > 0 {
             match state.args.word_count {
                 0 => {
+                    let spinner: ProgressBar = ProgressBar::new_spinner();
+                    spinner.set_style(
+                        ProgressStyle::with_template(
+                            "[{spinner:.white}] [{elapsed_precise}] {msg}",
+                        )
+                        .unwrap()
+                        .tick_strings(&[
+                            "▪▪▪▪▪     ",
+                            " ▪▪▪▪▪    ",
+                            "  ▪▪▪▪▪   ",
+                            "   ▪▪▪▪▪  ",
+                            "     ▪▪▪▪▪",
+                            "      ▪▪▪▪",
+                            "       ▪▪▪",
+                            "        ▪▪",
+                            "         ▪",
+                            "▪         ",
+                            "▪▪        ",
+                            "▪▪▪       ",
+                            "▪▪▪▪      ",
+                        ]),
+                    );
+                    spinner.set_message("Finding solutions...");
+                    spinner.enable_steady_tick(Duration::from_millis(100));
                     // Set stack and sum caching to avoid repeated recalculations.
                     let mut sum_cache: Frequency = Frequency::from(0);
                     let mut stack: Vec<usize> = vec![0];
@@ -289,6 +379,7 @@ impl From<&State> for Solutions {
                     }
                 }
                 1..=u8::MAX => {
+                    let freq_amount: usize = frequencies.len();
                     let freq_idx: HashMap<Frequency, usize> = {
                         let mut map: HashMap<Frequency, usize> = HashMap::default();
                         for (i, freq) in frequencies.iter().enumerate() {
@@ -301,10 +392,19 @@ impl From<&State> for Solutions {
                             solutions.insert(vec![freq_idx[&anagram_frequency]]);
                         }
                     } else {
+                        let pb: ProgressBar = ProgressBar::new(freq_amount as u64);
+                        pb.set_style(
+                            ProgressStyle::with_template(
+                                "[{bar:.white}] [{pos} of {len}] [{elapsed_precise}] {msg}",
+                            )
+                            .unwrap()
+                            .progress_chars("▪▪ "),
+                        );
+                        pb.set_message("Finding solutions...");
                         let mut odometer: Vec<usize> =
                             vec![0; (state.args.word_count - 1) as usize];
-
                         'main: loop {
+                            pb.set_position(odometer[0] as u64);
                             let sum = {
                                 let mut sum: Frequency = Frequency::default();
                                 for idx in odometer.iter() {
