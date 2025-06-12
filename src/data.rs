@@ -1,6 +1,6 @@
 use clap::Parser;
 use serde::Deserialize;
-use serde_json::{self, Deserializer};
+use serde_json::{self};
 use std::cmp::PartialEq;
 use std::collections::{HashMap, HashSet};
 use std::fs::read;
@@ -103,8 +103,8 @@ pub struct Entry {
 }
 #[derive(Debug)]
 pub enum DataError {
-    ParseError(std::string::FromUtf8Error),
-    IOError(std::io::Error),
+    // ParseError(std::string::FromUtf8Error),
+    // IOError(std::io::Error),
 }
 pub struct Data {
     pub string_mapping: HashMap<Frequency, Vec<String>>,

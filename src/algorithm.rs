@@ -5,7 +5,6 @@ use std::collections::{HashMap, HashSet};
 use std::fs::read;
 use std::time::Duration;
 use std::usize;
-use rayon::prelude::*;
 
 #[derive(Debug)]
 pub struct Solutions {
