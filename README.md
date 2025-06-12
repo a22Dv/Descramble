@@ -32,7 +32,7 @@ Here's a sample request.
 
 It says to solve the anagram "Built to stay free.", focusing on solutions made up of 3 words, set the threshold to 1, and show the top 100 results. 
 >[!WARNING]
->The `-s`/`--strength` flag may potentially exclude the correct solution. It sets a threshold to further exclude words >that may not meet the frequency threshold. Making sure that less common words aren't considered.
+>The `-s`/`--strength` flag may potentially exclude the correct solution. It sets a threshold to further exclude words that may not meet the frequency threshold. Making sure that less common words aren't considered.
 
 ### Customization
 
