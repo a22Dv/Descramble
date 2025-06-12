@@ -6,11 +6,22 @@
 
 A multiple-word anagram descrambler written in Rust.
 
-**Descramble** solves anagrams with multiple-word solutions while ensuring more likely and frequent solutions get recommended amongst a sea of potential solutions using NLP and word frequencies.
+**Descramble** uses word frequencies and Natural Language Processing (NLP) to find and rank the most likely multi-word solutions for any given anagram. 
 
 ## Installation
 
+### From Releases
+
 Download and extract one of the releases at the [Releases](https://github.com/a22Dv/Descramble/releases) section of this repository.
+
+### From Source
+
+If you have the Rust toolchain installed, you may build from source:
+```
+git clone https://github.com/a22Dv/Descramble.git
+cd Descramble
+cargo install --path .
+```
 
 ## Getting Started
 
@@ -36,9 +47,9 @@ It says to solve the anagram "Built to stay free.", focusing on solutions made u
 
 ### Customization
 
-You may add or remove words or templates from the data the program works on, located in the `data/` directory.
-`data/data.json` holds the english words, their frequency and their corresponding POS tag in isolation.
-`data/templates.json` holds the part of speech tag templates that the program will match solutions to. 
+You may add or remove words or templates from the data the program works on, which is located in the `data/` directory.
+`data/data.json` holds the english words, their frequency and their corresponding part of speech (POS) tag (e.g. NOUN, VERB) in isolation.
+`data/templates.json` holds the POS tag templates that the program will match the solutions to. 
 
 
 ### Sample Output:
@@ -68,6 +79,13 @@ outfit belt years / years belt outfit - 0.48%
 fitout belt years / years belt fitout - 0.47%
 outfit years blet / outfit blet years - 0.46%
 ```
+> [!TIP]
+> You may pipe the output to a .txt file to prevent results from being cut off from the
+> console history if they get too long. Run:
+> ```
+> ./descramble "your anagram" > output.txt
+> ```
+
 ### Disclaimer
 
 >[!NOTE]
@@ -75,8 +93,7 @@ outfit years blet / outfit blet years - 0.46%
 > The program uses probabilitistic techniques as well as NLP to rank solutions, therefore
 > even if it is guaranteed that the program will find the correct solution so long as the
 > constituent words are in `data.json`, you might not see them in the top-most entries.
-> You may pipe the output to a .txt file to prevent results from being cut off from the
-> console history if they get too long.
+
 ## License
 
 This project is licensed under the MIT license - see LICENSE for more details.

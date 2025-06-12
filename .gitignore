@@ -1,6 +1,6 @@
 /target
 .vscode/
-Cargo.lock
-venv/
+data/venv/
 rules.md
-data/
+english.txt
+tags.txt
